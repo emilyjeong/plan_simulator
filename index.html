@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>5개년 플랜 시뮬레이터</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #0B0E16; }
+    #root { min-height: 100vh; }
+  </style>
+  <!-- React + ReactDOM (UMD) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- prop-types (recharts 안전용) -->
+  <script crossorigin src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+  <!-- recharts (UMD) -->
+  <script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js"></script>
+  <!-- Babel standalone: JSX를 브라우저에서 변환 -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+const { useState, useMemo } = React;
+const {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine,
+} = Recharts;
+
+const C = {
+  bg: "#0B0E16", panel: "#141A26", panel2: "#1B2330", line: "#28323F",
+  text: "#E8EAEF", muted: "#8B95A7", gold: "#D9A84E",
+  re: "#D9A84E", fin: "#4ADE80", pension: "#5B9BD5",
+  bull: "#4ADE80", base: "#E0B252", bear: "#F2706B",
+};
+const YEARS = [2026, 2027, 2028, 2029, 2030, 2031];
+const RET_YEARS = [2027, 2028, 2029, 2030, 2031];
+const num = (v) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
+const E = (won) => won / 1e8;
+const f1 = (won) => E(won).toFixed(1);
+const y2 = (y) => String(y).slice(2);
+const TAG = { bull: "Bu", base: "Ba", bear: "Be" };
+
+const DEFAULTS = {
+  namsanVal: 17.5, namsanLoan: 8,
+  sujiVal: 7, sujiLoan: 7.5, sujiDoneVal: 15, sujiDoneYear: 2030,
+  reAppr: { bull: 20, base: 10, bear: -10 },
+  taxStart: 0.8, pensionStart: 0.74,
+  finRet: { bull: 20, base: 10, bear: -10 },
+  bonus: { 2027: 1.36, 2028: 3.33, 2029: 5.36, 2030: 4.87, 2031: 2.9 },
+  sellCost: 25, newLoan: 10, target: 25,
+};
+const SCN0 = { 2027: "base", 2028: "base", 2029: "base", 2030: "base", 2031: "base" };
+
+const EVENTS = {
+  2026: "현재 — 남산 보유 · 수지 리모델링/이주",
+  2027: "수지 2년 보유 충족(매도 가능)",
+  2028: "근로·투자 적립 지속",
+  2029: "갈아타기 후보 (LTV 완화 대기)",
+  2030: "수지 완공 · 3박자 정렬 시 강남 진입",
+  2031: "강남 정착 / 잔여 적립",
+};
+
+function project(p, yearScn) {
+  let fin = p.taxStart * 1e8;
+  let pension = p.pensionStart * 1e8;
+  let namsanV = p.namsanVal * 1e8;
+  let sujiV = p.sujiVal * 1e8;
+  const mk = (y) => {
+    const namsanEq = namsanV - p.namsanLoan * 1e8;
+    const sujiEq = sujiV - p.sujiLoan * 1e8;
+    const re = namsanEq + sujiEq;
+    return { year: y, re, fin, pension, namsanEq, sujiEq, total: re + fin + pension };
+  };
+  const out = [mk(2026)];
+  RET_YEARS.forEach((y) => {
+    const scn = yearScn[y] || "base";
+    const reR = num(p.reAppr[scn]) / 100;
+    const finR = num(p.finRet[scn]) / 100;
+    namsanV *= 1 + reR;
+    if (y === p.sujiDoneYear) sujiV = p.sujiDoneVal * 1e8;
+    else sujiV *= 1 + reR;
+    fin = (fin + num(p.bonus[y]) * 1e8) * (1 + finR);
+    pension = pension * (1 + finR);
+    out.push(mk(y));
+  });
+  return out;
+}
+
+function App() {
+  const [p, setP] = useState(DEFAULTS);
+  const [yearScn, setYearScn] = useState(SCN0);
+  const [sellYear, setSellYear] = useState(2030);
+  const [sellBoth, setSellBoth] = useState(false);
+  const [showAssum, setShowAssum] = useState(false);
+
+  const series = useMemo(() => project(p, yearScn), [p, yearScn]);
+  const row = series.find((r) => r.year === sellYear);
+
+  const reMobil = (sellBoth ? row.namsanEq + row.sujiEq : row.sujiEq) * (1 - num(p.sellCost) / 100);
+  const finMobil = row.fin;
+  const loanCap = num(p.newLoan) * 1e8;
+  const totalAmmo = reMobil + finMobil + loanCap;
+  const targetWon = num(p.target) * 1e8;
+
+  const chartData = series.map((r) => ({
+    year: `'${y2(r.year)}`,
+    부동산: +E(r.re).toFixed(2), 주식: +E(r.fin).toFixed(2), 연금: +E(r.pension).toFixed(2),
+  }));
+  const LAYERS = [
+    { key: "부동산", label: "부동산 에쿼티", c: C.re },
+    { key: "주식", label: "주식", c: C.fin },
+    { key: "연금", label: "연금", c: C.pension },
+  ];
+  const shown = LAYERS.filter((L) => chartData.some((d) => Math.abs(d[L.key]) > 0.005));
+
+  const set = (k, v) => setP((o) => ({ ...o, [k]: v }));
+  const setScnVal = (grp, k, v) => setP((o) => ({ ...o, [grp]: { ...o[grp], [k]: num(v) } }));
+  const setBonus = (yy, v) => setP((o) => ({ ...o, bonus: { ...o.bonus, [yy]: num(v) } }));
+  const setYr = (yy, v) => setYearScn((o) => ({ ...o, [yy]: v }));
+  const setAll = (v) => setYearScn(Object.fromEntries(RET_YEARS.map((yy) => [yy, v])));
+
+  const inS = { background: C.panel2, color: C.text, border: `1px solid ${C.line}`,
+    borderRadius: 7, padding: "6px 8px", fontSize: 12.5, width: "100%",
+    fontFamily: "'IBM Plex Mono', monospace", textAlign: "right", outline: "none" };
+
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text,
+      fontFamily: "'IBM Plex Sans KR', sans-serif", padding: "18px 14px 44px" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+        *{box-sizing:border-box;} .mono{font-family:'IBM Plex Mono',monospace;}
+      `}</style>
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
+
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.gold }} />
+          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 700 }}>5개년 플랜 타임라인</h1>
+        </div>
+        <p style={{ margin: "3px 0 14px 15px", color: C.muted, fontSize: 12.5, lineHeight: 1.5 }}>
+          부동산(보유→갈아타기) + 주식(보너스 적립→매도 실탄)을 시계열로. 연도별 시나리오·가정값 조정 가능.
+        </p>
+
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+            <Lbl>연도별 시나리오</Lbl>
+            <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+              <span style={{ fontSize: 10, color: C.muted }}>일괄</span>
+              {[["Bull", "bull", C.bull], ["Base", "base", C.base], ["Bear", "bear", C.bear]].map(([l, v, c]) => (
+                <button key={v} onClick={() => setAll(v)}
+                  style={{ padding: "3px 7px", borderRadius: 6, fontSize: 10.5, cursor: "pointer",
+                    border: `1px solid ${C.line}`, background: C.panel2, color: c,
+                    fontFamily: "'IBM Plex Mono',monospace" }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: C.muted, marginBottom: 9 }}>각 해에 적용할 수익률(가정값의 Bull/Base/Bear)을 연도별로 선택</div>
+          {RET_YEARS.map((yy) => (
+            <div key={yy} style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 7 }}>
+              <div className="mono" style={{ width: 42, fontSize: 13, color: C.gold, fontWeight: 600 }}>'{y2(yy)}</div>
+              <div style={{ flex: 1 }}>
+                <Seg opts={[["Bull", "bull", C.bull], ["Base", "base", C.base], ["Bear", "bear", C.bear]]}
+                  val={yearScn[yy]} on={(v) => setYr(yy, v)} />
+              </div>
+            </div>
+          ))}
+          <div style={{ height: 8 }} />
+          <Lbl>갈아타기(매도) 실행 시점</Lbl>
+          <Seg opts={[["'29", 2029, C.gold], ["'30", 2030, C.gold], ["'31", 2031, C.gold]]}
+            val={sellYear} on={setSellYear} />
+        </Card>
+
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600 }}>순자산 구성 추이</div>
+            <div className="mono" style={{ fontSize: 12, color: C.gold }}>{sellYear} 총 {f1(row.total)}억</div>
+          </div>
+          <div style={{ height: 210 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 6, right: 6, left: -20, bottom: 0 }}>
+                <defs>
+                  {shown.map(({ key, c }) => (
+                    <linearGradient key={key} id={`g${key}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={c} stopOpacity={0.5} />
+                      <stop offset="100%" stopColor={c} stopOpacity={0.06} />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid stroke={C.line} strokeDasharray="2 4" vertical={false} />
+                <XAxis dataKey="year" stroke={C.muted} tick={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                <YAxis stroke={C.muted} tick={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                <Tooltip contentStyle={{ background: C.panel2, border: `1px solid ${C.line}`,
+                  borderRadius: 8, fontSize: 12, fontFamily: "IBM Plex Mono" }}
+                  formatter={(v, n) => [`${v}억`, n]} labelStyle={{ color: C.muted }} />
+                <ReferenceLine x={`'${y2(sellYear)}`} stroke={C.gold} strokeDasharray="3 3" />
+                {[...shown].reverse().map(({ key, c }) => (
+                  <Area key={key} type="monotone" dataKey={key} stackId="1" stroke={c}
+                    fill={`url(#g${key})`} strokeWidth={1.8} />
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 4, fontSize: 11 }}>
+            {shown.map(({ key, label, c }) => (
+              <span key={key} style={{ display: "flex", alignItems: "center", gap: 4, color: C.muted }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{label}
+              </span>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>{sellYear} 갈아타기 실탄 집계</div>
+          <div className="mono" style={{ fontSize: 10, color: C.muted, marginBottom: 9 }}>
+            경로 {RET_YEARS.map((yy) => `'${y2(yy)} ${TAG[yearScn[yy]]}`).join("  ")}
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: C.muted, margin: "0 0 10px" }}>
+            <input type="checkbox" checked={sellBoth} onChange={(e) => setSellBoth(e.target.checked)} />
+            남산타운도 매도 (체크 안 하면 수지만 매도 · 남산 보유 = 1안 기본)
+          </label>
+          {[
+            ["주식 매도", finMobil, C.fin],
+            [sellBoth ? "부동산 순매도(남산+수지)" : "부동산 순매도(수지)", reMobil, C.re],
+            ["신규 대출 여력", loanCap, C.pension],
+          ].map(([l, v, c]) => (
+            <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0",
+              borderBottom: `1px solid ${C.line}`, fontSize: 12.5 }}>
+              <span style={{ color: C.muted }}>{l}</span>
+              <span className="mono" style={{ color: c }}>{f1(v)}억</span>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0 2px", fontSize: 14, fontWeight: 700 }}>
+            <span>= 강남 진입 가능액</span>
+            <span className="mono" style={{ color: C.gold }}>{f1(totalAmmo)}억</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8,
+            padding: "8px 10px", borderRadius: 8,
+            background: totalAmmo >= targetWon ? "rgba(74,222,128,.1)" : "rgba(242,112,107,.1)",
+            border: `1px solid ${totalAmmo >= targetWon ? "rgba(74,222,128,.3)" : "rgba(242,112,107,.3)"}` }}>
+            <span style={{ fontSize: 12 }}>목표 필요액 대비</span>
+            <span className="mono" style={{ fontSize: 13, fontWeight: 600,
+              color: totalAmmo >= targetWon ? C.bull : C.bear }}>
+              {f1(totalAmmo)} / {p.target}억 {totalAmmo >= targetWon ? "✓ 충족" : `· ${f1(targetWon - totalAmmo)}억 부족`}
+            </span>
+          </div>
+        </Card>
+
+        <Card>
+          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>연도별 타임라인</div>
+          {series.map((r, i) => {
+            const isSell = r.year === sellYear;
+            const sc = yearScn[r.year];
+            return (
+              <div key={r.year} style={{ display: "flex", gap: 11, paddingBottom: i < 5 ? 14 : 0 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                  <div className="mono" style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600,
+                    background: isSell ? "rgba(217,168,78,.16)" : C.panel2,
+                    border: `1px solid ${isSell ? C.gold : C.line}`, color: isSell ? C.gold : C.text }}>
+                    '{y2(r.year)}
+                  </div>
+                  {i < 5 && <div style={{ width: 1, flex: 1, background: C.line, marginTop: 2 }} />}
+                </div>
+                <div style={{ flex: 1, paddingTop: 1 }}>
+                  <div style={{ fontSize: 12.5, color: isSell ? C.gold : C.text, fontWeight: isSell ? 600 : 400 }}>
+                    {isSell ? "★ 갈아타기 실행 — " : ""}{EVENTS[r.year]}
+                    {sc && <span className="mono" style={{ fontSize: 10, color: sc === "bull" ? C.bull : sc === "bear" ? C.bear : C.base, marginLeft: 5 }}>[{TAG[sc]}]</span>}
+                  </div>
+                  {r.year >= 2027 && (
+                    <div className="mono" style={{ fontSize: 10.5, color: C.fin, marginTop: 2 }}>
+                      + 보너스 {num(p.bonus[r.year]).toFixed(2)}억 → 주식
+                    </div>
+                  )}
+                  <div className="mono" style={{ fontSize: 11, color: C.muted, marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ color: C.re }}>부동산 {f1(r.re)}</span>
+                    <span style={{ color: C.fin }}>주식 {f1(r.fin)}</span>
+                    <span>순자산 <b style={{ color: C.text }}>{f1(r.total)}억</b></span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+
+        <button onClick={() => setShowAssum((s) => !s)} style={{ width: "100%", padding: "10px 0",
+          borderRadius: 10, cursor: "pointer", background: C.panel, border: `1px solid ${C.line}`,
+          color: C.gold, fontSize: 12.5, fontFamily: "'IBM Plex Sans KR',sans-serif", marginBottom: 12 }}>
+          {showAssum ? "▲ 가정값 숨기기" : "▼ 가정값 조정 (부동산·수익률·보너스)"}
+        </button>
+
+        {showAssum && (
+          <Card>
+            <Lbl>부동산 (억)</Lbl>
+            <Grid>
+              <NumF label="남산 현재가" v={p.namsanVal} on={(v) => set("namsanVal", num(v))} s={inS} />
+              <NumF label="남산 대출" v={p.namsanLoan} on={(v) => set("namsanLoan", num(v))} s={inS} />
+              <NumF label="수지 현재가" v={p.sujiVal} on={(v) => set("sujiVal", num(v))} s={inS} />
+              <NumF label="수지 대출" v={p.sujiLoan} on={(v) => set("sujiLoan", num(v))} s={inS} />
+              <NumF label="수지 완공가" v={p.sujiDoneVal} on={(v) => set("sujiDoneVal", num(v))} s={inS} />
+              <NumF label="완공 연도" v={p.sujiDoneYear} on={(v) => set("sujiDoneYear", num(v))} s={inS} />
+            </Grid>
+            <div style={{ height: 10 }} />
+            <Lbl>연 상승/수익률 (%/yr) — Bull / Base / Bear</Lbl>
+            {[["부동산", "reAppr"], ["주식·연금", "finRet"]].map(([nm, grp]) => (
+              <div key={grp} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <div style={{ width: 70, fontSize: 12, color: C.muted }}>{nm}</div>
+                {["bull", "base", "bear"].map((k) => (
+                  <input key={k} className="mono" type="number" value={p[grp][k]}
+                    onChange={(e) => setScnVal(grp, k, e.target.value)} style={{ ...inS, padding: "5px 6px" }} />
+                ))}
+              </div>
+            ))}
+            <div style={{ height: 10 }} />
+            <Lbl>주식·연금 시작값 (억)</Lbl>
+            <Grid>
+              <NumF label="주식" v={p.taxStart} on={(v) => set("taxStart", num(v))} s={inS} />
+              <NumF label="연금(KB)" v={p.pensionStart} on={(v) => set("pensionStart", num(v))} s={inS} />
+            </Grid>
+            <div style={{ height: 10 }} />
+            <Lbl>보너스 유입 (억)</Lbl>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
+              {RET_YEARS.map((yy) => (
+                <div key={yy}>
+                  <div className="mono" style={{ fontSize: 10, color: C.muted, textAlign: "center", marginBottom: 3 }}>'{y2(yy)}</div>
+                  <input className="mono" type="number" value={p.bonus[yy]}
+                    onChange={(e) => setBonus(yy, e.target.value)} style={{ ...inS, textAlign: "center", padding: "5px 2px" }} />
+                </div>
+              ))}
+            </div>
+            <div style={{ height: 10 }} />
+            <Lbl>갈아타기 파라미터</Lbl>
+            <Grid>
+              <NumF label="매도비용률%" v={p.sellCost} on={(v) => set("sellCost", num(v))} s={inS} />
+              <NumF label="신규대출여력" v={p.newLoan} on={(v) => set("newLoan", num(v))} s={inS} />
+              <NumF label="목표필요액" v={p.target} on={(v) => set("target", num(v))} s={inS} />
+            </Grid>
+            <button onClick={() => { setP(DEFAULTS); setYearScn(SCN0); }} style={{ marginTop: 14, width: "100%", padding: "9px 0",
+              borderRadius: 8, cursor: "pointer", background: "transparent", border: `1px solid ${C.line}`,
+              color: C.muted, fontSize: 12 }}>기본값으로 초기화</button>
+          </Card>
+        )}
+
+        <div style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.6, padding: "0 2px" }}>
+          ※ 수익률·상승률은 가정값입니다. 부동산은 갈아타기 시점까지 보유 가정(세금·매수 재편 단순화). 연금은 실탄에서 제외(잠김).
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Card({ children }) {
+  return <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: 15, marginBottom: 12 }}>{children}</div>;
+}
+function Lbl({ children }) { return <div style={{ fontSize: 11.5, color: C.muted, marginBottom: 7 }}>{children}</div>; }
+function Grid({ children }) { return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{children}</div>; }
+function Seg({ opts, val, on }) {
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      {opts.map(([lbl, v, col]) => (
+        <button key={String(v)} onClick={() => on(v)} style={{ flex: 1, padding: "8px 0", borderRadius: 8,
+          fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'IBM Plex Mono',monospace",
+          border: `1px solid ${val === v ? col : C.line}`,
+          background: val === v ? "rgba(217,168,78,.12)" : C.panel2,
+          color: val === v ? col : C.muted }}>{lbl}</button>
+      ))}
+    </div>
+  );
+}
+function NumF({ label, v, on, s }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>{label}</div>
+      <input className="mono" type="number" step="0.1" value={v} onChange={(e) => on(e.target.value)} style={s} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
