@@ -38,7 +38,7 @@ const DEFAULTS = {
   taxStart: 1.8,
   finRet: { bull: 10, base: 5, bear: -5 },
   bonus: { 2027: 1.36, 2028: 3.33, 2029: 5.36, 2030: 4.87, 2031: 2.9 },
-  sujiCost: 2, newLoan: 10,
+  sujiCost: 2, namsanCost: 3, newLoan: 10,
 };
 const SCN0 = { 2027: "base", 2028: "base", 2029: "base", 2030: "base", 2031: "base" };
 
@@ -62,8 +62,9 @@ function project(p, yearScn) {
     const sujiLoan = (p.sujiLoanNow + (p.sujiLoanDone - p.sujiLoanNow) * t) * 1e8;
     const finCost = num(p.sujiFinCost) * t * 1e8;
     const sujiEq = sujiV - sujiLoan - finCost;
+    const sujiCash = sujiV - sujiLoan;
     const re = namsanEq + sujiEq;
-    return { year: y, re, fin, namsanEq, sujiEq, total: re + fin };
+    return { year: y, re, fin, namsanEq, sujiEq, sujiCash, total: re + fin };
   };
   const out = [mk(2026)];
   RET_YEARS.forEach((y) => {
@@ -73,7 +74,7 @@ function project(p, yearScn) {
     namsanV *= 1 + reR;
     if (y === p.sujiDoneYear) sujiV = p.sujiDoneVal * 1e8;
     else sujiV *= 1 + reR;
-    fin = (fin + num(p.bonus[y]) * 1e8) * (1 + finR);
+    fin = fin * (1 + finR) + num(p.bonus[y]) * 1e8;
     out.push(mk(y));
   });
   return out;
@@ -188,7 +189,9 @@ function App() {
   const series = useMemo(() => project(p, yearScn), [p, yearScn]);
   const row = series.find((r) => r.year === sellYear);
 
-  const reMobil = row.sujiEq - num(p.sujiCost) * 1e8;
+  const namsanMobil = row.namsanEq - num(p.namsanCost) * 1e8;
+  const sujiMobil = row.sujiCash - num(p.sujiCost) * 1e8;
+  const reMobil = namsanMobil + sujiMobil;
   const finMobil = row.fin;
   const loanCap = num(p.newLoan) * 1e8;
   const totalAmmo = reMobil + finMobil + loanCap;
@@ -271,7 +274,7 @@ function App() {
 
         <Card>
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>연도별 흐름 (가로 타임라인)</div>
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 8 }}>보너스 유입 → 자산 성장 → Total · 좌우 스크롤 · 단위 억</div>
+          <div style={{ fontSize: 10, color: C.muted, marginBottom: 8 }}>보너스는 받은 해 전액 주식에 합산 → 다음 해부터 시장 수익률로 성장 · 좌우 스크롤 · 단위 억</div>
           <FlowTimeline series={series} yearScn={yearScn} bonus={p.bonus} sellYear={sellYear} />
         </Card>
 
@@ -282,7 +285,8 @@ function App() {
           </div>
           {[
             ["주식 매도", finMobil, C.fin],
-            ["부동산 순매도", reMobil, C.re],
+            ["남산 순매도", namsanMobil, C.re],
+            ["수지 순매도", sujiMobil, C.re],
             ["신규 대출 여력", loanCap, C.pension],
           ].map(([l, v, c]) => (
             <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0",
@@ -384,6 +388,7 @@ function App() {
             <Lbl>갈아타기 파라미터 (매도비용 = 양도세+수수료 등, 억)</Lbl>
             <Grid>
               <NumF label="수지 매도비용" v={p.sujiCost} on={(v) => set("sujiCost", num(v))} s={inS} />
+              <NumF label="남산 매도비용" v={p.namsanCost} on={(v) => set("namsanCost", num(v))} s={inS} />
               <NumF label="신규대출여력" v={p.newLoan} on={(v) => set("newLoan", num(v))} s={inS} />
             </Grid>
             <button onClick={() => { setP(DEFAULTS); setYearScn(SCN0); }} style={{ marginTop: 14, width: "100%", padding: "9px 0",
