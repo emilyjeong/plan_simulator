@@ -38,7 +38,7 @@ const DEFAULTS = {
   taxStart: 0.8, pensionStart: 0.74,
   finRet: { bull: 20, base: 10, bear: -10 },
   bonus: { 2027: 1.36, 2028: 3.33, 2029: 5.36, 2030: 4.87, 2031: 2.9 },
-  sellCost: 25, newLoan: 10, target: 25,
+  sujiCost: 2, namsanCost: 3, newLoan: 10, target: 25,
 };
 const SCN0 = { 2027: "base", 2028: "base", 2029: "base", 2030: "base", 2031: "base" };
 
@@ -139,7 +139,7 @@ function App() {
   const series = useMemo(() => project(p, yearScn), [p, yearScn]);
   const row = series.find((r) => r.year === sellYear);
 
-  const reMobil = (sellBoth ? row.namsanEq + row.sujiEq : row.sujiEq) * (1 - num(p.sellCost) / 100);
+  const reMobil = (row.sujiEq - num(p.sujiCost) * 1e8) + (sellBoth ? (row.namsanEq - num(p.namsanCost) * 1e8) : 0);
   const finMobil = row.fin;
   const loanCap = num(p.newLoan) * 1e8;
   const totalAmmo = reMobil + finMobil + loanCap;
@@ -341,9 +341,10 @@ function App() {
               ))}
             </div>
             <div style={{ height: 10 }} />
-            <Lbl>갈아타기 파라미터</Lbl>
+            <Lbl>갈아타기 파라미터 (매도비용 = 양도세+수수료 등, 억)</Lbl>
             <Grid>
-              <NumF label="매도비용률%" v={p.sellCost} on={(v) => set("sellCost", num(v))} s={inS} />
+              <NumF label="수지 매도비용" v={p.sujiCost} on={(v) => set("sujiCost", num(v))} s={inS} />
+              <NumF label="남산 매도비용" v={p.namsanCost} on={(v) => set("namsanCost", num(v))} s={inS} />
               <NumF label="신규대출여력" v={p.newLoan} on={(v) => set("newLoan", num(v))} s={inS} />
               <NumF label="목표필요액" v={p.target} on={(v) => set("target", num(v))} s={inS} />
             </Grid>
