@@ -8,25 +8,15 @@
     html, body { margin: 0; padding: 0; background: #0B0E16; }
     #root { min-height: 100vh; }
   </style>
-  <!-- React + ReactDOM (UMD) -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- prop-types (recharts 안전용) -->
-  <script crossorigin src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
-  <!-- recharts (UMD) -->
-  <script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js"></script>
-  <!-- Babel standalone: JSX를 브라우저에서 변환 -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel" data-presets="react">
 const { useState, useMemo } = React;
-const {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine,
-} = Recharts;
 
 const C = {
   bg: "#0B0E16", panel: "#141A26", panel2: "#1B2330", line: "#28323F",
@@ -34,7 +24,6 @@ const C = {
   re: "#D9A84E", fin: "#4ADE80", pension: "#5B9BD5",
   bull: "#4ADE80", base: "#E0B252", bear: "#F2706B",
 };
-const YEARS = [2026, 2027, 2028, 2029, 2030, 2031];
 const RET_YEARS = [2027, 2028, 2029, 2030, 2031];
 const num = (v) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
 const E = (won) => won / 1e8;
@@ -88,6 +77,58 @@ function project(p, yearScn) {
   return out;
 }
 
+function NetWorthChart({ series, sellYear }) {
+  const W = 340, H = 210, padL = 30, padR = 8, padT = 8, padB = 22;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = series.length;
+  const X = (i) => padL + (plotW * i) / (n - 1);
+  const totals = series.map((r) => E(r.total));
+  const maxTotal = Math.max(...totals, 1);
+  const step = 15;
+  const yMax = Math.max(step, Math.ceil(maxTotal / step) * step);
+  const Y = (v) => padT + plotH * (1 - v / yMax);
+  const grid = [];
+  for (let v = 0; v <= yMax + 0.001; v += step) grid.push(v);
+  const sellIdx = series.findIndex((r) => r.year === sellYear);
+
+  const cum = series.map((r) => {
+    const p = E(r.pension), f = E(r.fin), e = E(r.re);
+    return { pension: [0, p], fin: [p, p + f], re: [p + f, p + f + e] };
+  });
+  const area = (key) => {
+    let d = `M ${X(0)} ${Y(cum[0][key][1])}`;
+    for (let i = 1; i < n; i++) d += ` L ${X(i)} ${Y(cum[i][key][1])}`;
+    for (let i = n - 1; i >= 0; i--) d += ` L ${X(i)} ${Y(cum[i][key][0])}`;
+    return d + " Z";
+  };
+  const line = (key) => {
+    let d = `M ${X(0)} ${Y(cum[0][key][1])}`;
+    for (let i = 1; i < n; i++) d += ` L ${X(i)} ${Y(cum[i][key][1])}`;
+    return d;
+  };
+  const bands = [
+    { key: "pension", c: C.pension },
+    { key: "fin", c: C.fin },
+    { key: "re", c: C.re },
+  ];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
+      {grid.map((v) => (
+        <g key={v}>
+          <line x1={padL} x2={W - padR} y1={Y(v)} y2={Y(v)} stroke={C.line} strokeDasharray="2 4" />
+          <text x={padL - 4} y={Y(v) + 3} fill={C.muted} fontSize="9" textAnchor="end" fontFamily="IBM Plex Mono">{v}</text>
+        </g>
+      ))}
+      {sellIdx >= 0 && <line x1={X(sellIdx)} x2={X(sellIdx)} y1={padT} y2={H - padB} stroke={C.gold} strokeWidth="1" strokeDasharray="3 3" />}
+      {bands.map((b) => <path key={"a" + b.key} d={area(b.key)} fill={b.c} fillOpacity="0.32" />)}
+      {bands.map((b) => <path key={"l" + b.key} d={line(b.key)} fill="none" stroke={b.c} strokeWidth="1.6" />)}
+      {series.map((r, i) => (
+        <text key={i} x={X(i)} y={H - 6} fill={C.muted} fontSize="9" textAnchor="middle" fontFamily="IBM Plex Mono">'{y2(r.year)}</text>
+      ))}
+    </svg>
+  );
+}
+
 function App() {
   const [p, setP] = useState(DEFAULTS);
   const [yearScn, setYearScn] = useState(SCN0);
@@ -104,16 +145,11 @@ function App() {
   const totalAmmo = reMobil + finMobil + loanCap;
   const targetWon = num(p.target) * 1e8;
 
-  const chartData = series.map((r) => ({
-    year: `'${y2(r.year)}`,
-    부동산: +E(r.re).toFixed(2), 주식: +E(r.fin).toFixed(2), 연금: +E(r.pension).toFixed(2),
-  }));
-  const LAYERS = [
-    { key: "부동산", label: "부동산 에쿼티", c: C.re },
-    { key: "주식", label: "주식", c: C.fin },
-    { key: "연금", label: "연금", c: C.pension },
-  ];
-  const shown = LAYERS.filter((L) => chartData.some((d) => Math.abs(d[L.key]) > 0.005));
+  const legend = [
+    { key: "re", label: "부동산 에쿼티", c: C.re },
+    { key: "fin", label: "주식", c: C.fin },
+    { key: "pension", label: "연금", c: C.pension },
+  ].filter((b) => Math.max(...series.map((r) => r[b.key])) > 1e6);
 
   const set = (k, v) => setP((o) => ({ ...o, [k]: v }));
   const setScnVal = (grp, k, v) => setP((o) => ({ ...o, [grp]: { ...o[grp], [k]: num(v) } }));
@@ -176,35 +212,11 @@ function App() {
             <div style={{ fontSize: 12.5, fontWeight: 600 }}>순자산 구성 추이</div>
             <div className="mono" style={{ fontSize: 12, color: C.gold }}>{sellYear} 총 {f1(row.total)}억</div>
           </div>
-          <div style={{ height: 210 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 6, right: 6, left: -20, bottom: 0 }}>
-                <defs>
-                  {shown.map(({ key, c }) => (
-                    <linearGradient key={key} id={`g${key}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={c} stopOpacity={0.5} />
-                      <stop offset="100%" stopColor={c} stopOpacity={0.06} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid stroke={C.line} strokeDasharray="2 4" vertical={false} />
-                <XAxis dataKey="year" stroke={C.muted} tick={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                <YAxis stroke={C.muted} tick={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                <Tooltip contentStyle={{ background: C.panel2, border: `1px solid ${C.line}`,
-                  borderRadius: 8, fontSize: 12, fontFamily: "IBM Plex Mono" }}
-                  formatter={(v, n) => [`${v}억`, n]} labelStyle={{ color: C.muted }} />
-                <ReferenceLine x={`'${y2(sellYear)}`} stroke={C.gold} strokeDasharray="3 3" />
-                {[...shown].reverse().map(({ key, c }) => (
-                  <Area key={key} type="monotone" dataKey={key} stackId="1" stroke={c}
-                    fill={`url(#g${key})`} strokeWidth={1.8} />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 4, fontSize: 11 }}>
-            {shown.map(({ key, label, c }) => (
-              <span key={key} style={{ display: "flex", alignItems: "center", gap: 4, color: C.muted }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{label}
+          <NetWorthChart series={series} sellYear={sellYear} />
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 6, fontSize: 11 }}>
+            {legend.map((b) => (
+              <span key={b.key} style={{ display: "flex", alignItems: "center", gap: 4, color: C.muted }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: b.c }} />{b.label}
               </span>
             ))}
           </div>
