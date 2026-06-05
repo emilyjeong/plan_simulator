@@ -129,6 +129,56 @@ function NetWorthChart({ series, sellYear }) {
   );
 }
 
+function FlowTimeline({ series, yearScn, bonus, sellYear }) {
+  const rows = [
+    { label: "부동산", key: "re", c: C.re },
+    { label: "주식", key: "fin", c: C.fin },
+    { label: "연금", key: "pension", c: C.pension },
+  ];
+  const colW = 64;
+  const cb = { padding: "5px 4px", fontSize: 11, textAlign: "right", borderLeft: `1px solid ${C.line}` };
+  const sellBg = (y) => (y === sellYear ? "rgba(217,168,78,.1)" : "transparent");
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: `46px repeat(${series.length}, minmax(${colW}px,1fr))`, minWidth: 46 + series.length * colW }}>
+        <div style={{ ...cb, borderLeft: "none", textAlign: "left", color: C.muted }}>연도</div>
+        {series.map((r) => {
+          const sc = yearScn[r.year];
+          const isSell = r.year === sellYear;
+          return (
+            <div key={r.year} className="mono" style={{ ...cb, textAlign: "center", fontWeight: 600,
+              color: isSell ? C.gold : C.text, background: sellBg(r.year) }}>
+              '{y2(r.year)}
+              {sc && <span style={{ fontSize: 8, display: "block", color: sc === "bull" ? C.bull : sc === "bear" ? C.bear : C.base }}>{TAG[sc]}</span>}
+            </div>
+          );
+        })}
+
+        <div style={{ ...cb, borderLeft: "none", textAlign: "left", color: C.fin }}>+보너스</div>
+        {series.map((r) => (
+          <div key={r.year} className="mono" style={{ ...cb, color: C.fin, background: sellBg(r.year) }}>
+            {r.year >= 2027 ? `+${num(bonus[r.year]).toFixed(1)}` : "–"}
+          </div>
+        ))}
+
+        {rows.map((row) => (
+          <React.Fragment key={row.key}>
+            <div style={{ ...cb, borderLeft: "none", textAlign: "left", color: row.c }}>{row.label}</div>
+            {series.map((r) => (
+              <div key={r.year} className="mono" style={{ ...cb, color: row.c, background: sellBg(r.year) }}>{f1(r[row.key])}</div>
+            ))}
+          </React.Fragment>
+        ))}
+
+        <div style={{ ...cb, borderLeft: "none", textAlign: "left", color: C.text, fontWeight: 700, borderTop: `1px solid ${C.line}` }}>Total</div>
+        {series.map((r) => (
+          <div key={r.year} className="mono" style={{ ...cb, color: C.gold, fontWeight: 700, borderTop: `1px solid ${C.line}`, background: sellBg(r.year) }}>{f1(r.total)}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [p, setP] = useState(DEFAULTS);
   const [yearScn, setYearScn] = useState(SCN0);
@@ -220,6 +270,12 @@ function App() {
               </span>
             ))}
           </div>
+        </Card>
+
+        <Card>
+          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>연도별 흐름 (가로 타임라인)</div>
+          <div style={{ fontSize: 10, color: C.muted, marginBottom: 8 }}>보너스 유입 → 자산 성장 → Total · 좌우 스크롤 · 단위 억</div>
+          <FlowTimeline series={series} yearScn={yearScn} bonus={p.bonus} sellYear={sellYear} />
         </Card>
 
         <Card>
