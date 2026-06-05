@@ -33,7 +33,7 @@ const TAG = { bull: "Bu", base: "Ba", bear: "Be" };
 
 const DEFAULTS = {
   namsanVal: 17.5, namsanLoan: 8,
-  sujiVal: 7, sujiLoan: 7.5, sujiDoneVal: 15, sujiDoneYear: 2030,
+  sujiVal: 7, sujiLoanNow: 4, sujiLoanDone: 7.5, sujiFinCost: 1, sujiDoneVal: 15, sujiDoneYear: 2030,
   reAppr: { bull: 20, base: 10, bear: -10 },
   taxStart: 0.8, pensionStart: 0.74,
   finRet: { bull: 20, base: 10, bear: -10 },
@@ -58,7 +58,11 @@ function project(p, yearScn) {
   let sujiV = p.sujiVal * 1e8;
   const mk = (y) => {
     const namsanEq = namsanV - p.namsanLoan * 1e8;
-    const sujiEq = sujiV - p.sujiLoan * 1e8;
+    const span = p.sujiDoneYear - 2026;
+    const t = span > 0 ? Math.min(Math.max((y - 2026) / span, 0), 1) : (y >= p.sujiDoneYear ? 1 : 0);
+    const sujiLoan = (p.sujiLoanNow + (p.sujiLoanDone - p.sujiLoanNow) * t) * 1e8;
+    const finCost = num(p.sujiFinCost) * t * 1e8;
+    const sujiEq = sujiV - sujiLoan - finCost;
     const re = namsanEq + sujiEq;
     return { year: y, re, fin, pension, namsanEq, sujiEq, total: re + fin + pension };
   };
@@ -364,8 +368,10 @@ function App() {
               <NumF label="남산 현재가" v={p.namsanVal} on={(v) => set("namsanVal", num(v))} s={inS} />
               <NumF label="남산 대출" v={p.namsanLoan} on={(v) => set("namsanLoan", num(v))} s={inS} />
               <NumF label="수지 현재가" v={p.sujiVal} on={(v) => set("sujiVal", num(v))} s={inS} />
-              <NumF label="수지 대출" v={p.sujiLoan} on={(v) => set("sujiLoan", num(v))} s={inS} />
               <NumF label="수지 완공가" v={p.sujiDoneVal} on={(v) => set("sujiDoneVal", num(v))} s={inS} />
+              <NumF label="수지대출(현재)" v={p.sujiLoanNow} on={(v) => set("sujiLoanNow", num(v))} s={inS} />
+              <NumF label="수지대출(완공)" v={p.sujiLoanDone} on={(v) => set("sujiLoanDone", num(v))} s={inS} />
+              <NumF label="수지 금융비용" v={p.sujiFinCost} on={(v) => set("sujiFinCost", num(v))} s={inS} />
               <NumF label="완공 연도" v={p.sujiDoneYear} on={(v) => set("sujiDoneYear", num(v))} s={inS} />
             </Grid>
             <div style={{ height: 10 }} />
